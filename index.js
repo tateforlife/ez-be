@@ -2,7 +2,10 @@ const express = require("express");
 const app = express();
 const admin = require('firebase-admin');
 const moment = require('moment');
+const cors = require('cors')
 require('dotenv').config()
+
+app.use(cors())
 
 const carMap = {
     1: 'TOYOTA RAV4 AWD',
