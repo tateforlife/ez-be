@@ -1,7 +1,45 @@
 const express = require("express");
 const app = express();
 const admin = require('firebase-admin');
+const moment = require('moment');
 require('dotenv').config()
+
+const carMap = {
+    1: 'TOYOTA RAV4 AWD',
+    2: 'KIA SPORTAGE AWD',
+    3: 'CITROEN C4',
+    4: 'CHEVROLET ORLANDO 7 seats',
+    10: 'VOLKSWAGEN TIGUAN',
+    11: '',
+    12: 'OPEL GRANDLAND X',
+    13: 'KIA SPORTAGE AWD',
+    14: 'TOYOTA RAV4 AWD',
+    15: 'OPEL GRANDLAND X',
+    16: 'VOLKSWAGEN PASSAT B8',
+    17: 'FORD EXPLORER 7 seats',
+    18: 'FORD EXPLORER 7 seats',
+    19: 'OPEL ZAFIRA 7 seats',
+    20: 'HYNDAI TUCSON N LINE AWD',
+    22: '',
+    23: 'INFINITI Q30',
+    24: 'INFINITI Q30',
+    25: 'LAND ROVER RANGE ROVER SPORT',
+    26: 'KIA SPORTAGE AWD',
+    27: 'KIA SPORTAGE AWD',
+    28: 'PORSCHE CAYENNE COUPE',
+    29: 'MERCEDES-BENZ GLE COUPE',
+    30: 'BMW X4 X-DRIVE',
+    31: 'CITROEN C4',
+    32: 'TOYOTA COROLLA HYBRID',
+    33: 'TOYOTA COROLLA',
+    34: 'TOYOTA COROLLA CROSS HYBRID',
+    35: 'TOYOTA COROLLA CROSS AWD',
+    36: 'AUDI A7 Sportback',
+    37: 'BMW 7 LONG',
+    38: 'SKODA KODIAQ',
+    39: 'SKODA KODIAQ',
+    40: 'DODGE JOURNEY 7 seats'
+};
 
 admin.initializeApp({
     credential: admin.credential.cert({
@@ -39,8 +77,8 @@ app.get("/api/list", async (_, res) => {
 
 app.post('/api/create', async function (req, res) {
     const payload = {
-        "from": req.body.from || null,
-        "to": req.body.to || null,
+        "from": moment(req.body.from).format('DD.MM.YYYY') || null,
+        "to": moment(req.body.to).format('DD.MM.YYYY') || null,
         "username": req.body.username || null,
         "tel": req.body.tel || null,
         "admission": req.body.admission || null,
@@ -48,7 +86,8 @@ app.post('/api/create', async function (req, res) {
         "comment": req.body.comment || null,
         "lang": req.body.lang || null,
         "email": req.body.email || null,
-        "car": req.body.car || null,
+        "car": carMap[req.body.car] || req.body.car || null,
+        "carId": req.body.car || null
     };
 
     if (
@@ -61,11 +100,19 @@ app.post('/api/create', async function (req, res) {
         return res.status(400).send('One of the required fields is empty');
     }
 
-    const id = db.collection('ez').doc().id;
     const byCollectionRef = db.collection('ez');
-    await byCollectionRef.doc(id).set(payload);
+    let applications = [];
+    const snapshot = await byCollectionRef.get();
+    snapshot.forEach(doc => {
+        applications.push({
+            id: doc.id,
+            ...doc.data()
+        });
+    });
+    const id = applications.length;
+    await byCollectionRef.doc(id.toString()).set(payload);
 
-    res.status(200).send(req.body);
+    res.status(200).send(payload);
 })
 
 app.listen(process.env.PORT || 80, async() => {
