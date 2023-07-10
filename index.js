@@ -87,7 +87,8 @@ app.post('/api/create', async function (req, res) {
         "lang": req.body.lang || null,
         "email": req.body.email || null,
         "car": carMap[req.body.car] || req.body.car || null,
-        "carId": req.body.car || null
+        "carId": req.body.car || null,
+        "status": "created"
     };
 
     if (
