@@ -4,6 +4,7 @@ const admin = require('firebase-admin');
 const moment = require('moment');
 const cors = require('cors')
 require('dotenv').config()
+const XlsxPopulate = require('xlsx-populate');
 
 app.use(cors())
 
@@ -62,6 +63,34 @@ admin.initializeApp({
 const db = admin.firestore();
 
 app.use(express.json());
+
+var convertapi = require('convertapi')('BpMFm93JuS1vLLrV');
+const convertToPdf = async (id) => {
+    const x = convertapi.convert('pdf', {
+        File: `./xlsx/${id}-12_11-07-2029_Yefim.xlsx`
+    }, 'xls').then(function(result) {
+        const y = result.saveFiles('./pdf/');
+
+        return y;
+    });
+
+    return x;
+};
+
+app.get('/pdf', (req, res) => {
+    const id = req.body.id || 0;
+    const name = `${id}-12_11-07-2029_Yefim`;
+    const x = XlsxPopulate.fromFileAsync("./template.xlsx")
+        .then(workbook => {
+            const value = workbook.sheet(0).cell("C12").value(25);
+
+            return workbook.toFileAsync(`./xlsx/${name}.xlsx`);
+        });
+
+    x.then(_ => {
+        convertToPdf(id).then(_ => res.download(`./pdf/${name}.pdf`))
+    })
+})
 
 app.get("/api/list", async (_, res) => {
     let applications = [];
