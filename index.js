@@ -3,13 +3,36 @@ const app = express();
 const admin = require('firebase-admin');
 const moment = require('moment');
 const cors = require('cors')
-require('dotenv').config()
 const XlsxPopulate = require('xlsx-populate');
-var convertapi = require('convertapi')('BpMFm93JuS1vLLrV');
 const fs = require('fs');
+// TODO add secret env key
+const convertapi = require('convertapi')('BpMFm93JuS1vLLrV');
+require('dotenv').config()
+
+const LOCATIONS_MAP = {
+    1: 'Riga, Valguma iela 4a',
+    2: 'Riga International Airport RIX'
+};
 
 app.use(cors())
 app.use(express.json());
+
+admin.initializeApp({
+    credential: admin.credential.cert({
+        "type": "service_account",
+        "project_id": process.env.PROJECT_ID,
+        "private_key_id": process.env.PIRVATE_KEY_ID,
+        "private_key": process.env.PRIVATE_KEY,
+        "client_email": process.env.CLIENT_EMAIL,
+        "client_id": process.env.CLIENT_ID,
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url": process.env.X509_CERT_URL,
+        "universe_domain": "googleapis.com"
+    })
+});
+const db = admin.firestore();
 
 const DOCUMENTS_KEY = 'documents';
 const getPayloadLocations = (inputData) => {
@@ -69,24 +92,7 @@ const carMap = {
     40: 'DODGE JOURNEY 7 seats'
 };
 
-admin.initializeApp({
-    credential: admin.credential.cert({
-        "type": "service_account",
-        "project_id": process.env.PROJECT_ID,
-        "private_key_id": process.env.PIRVATE_KEY_ID,
-        "private_key": process.env.PRIVATE_KEY,
-        "client_email": process.env.CLIENT_EMAIL,
-        "client_id": process.env.CLIENT_ID,
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token",
-        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-        "client_x509_cert_url": process.env.X509_CERT_URL,
-        "universe_domain": "googleapis.com"
-    })
-});
-const db = admin.firestore();
-
-const convertToPdf = async (id) => {
+const convertContract = async (id) => {
     const x = convertapi.convert('pdf', {
         File: `./xlsx/${id}.xlsx`,
         WorksheetIndex: 2
@@ -99,8 +105,21 @@ const convertToPdf = async (id) => {
     return x;
 };
 
-app.post("/downloadPdfById", async (req, res) => {
-    const name = `${req.body.contractNumber.replace("/", "-")}`;
+const convertInvoice = async (id) => {
+    const x = convertapi.convert('pdf', {
+        File: `./xlsx/${id}.xlsx`,
+        WorksheetIndex: 3
+    }, 'xls').then(function(result) {
+        const y = result.saveFiles('./invoice/');
+
+        return y;
+    });
+
+    return x;
+};
+
+app.post("/api/downloadContract", async (req, res) => {
+    const name = `RDV-${req.body.id}`;
     const path = `./pdf/${name}.pdf`;
     try {
         if (fs.existsSync(path)) {
@@ -113,34 +132,21 @@ app.post("/downloadPdfById", async (req, res) => {
     }
 });
 
-app.post('/pdf', (req, res) => {
-    const {
-        contractNumber,
-        from,
-        to,
-        delivery,
-        admission
-    } = req.body;
+app.post("/api/downloadInvoice", async (req, res) => {
+    const name = `RDV-${req.body.id}`;
+    const path = `./invoice/${name}.pdf`;
+    try {
+        if (fs.existsSync(path)) {
+            res.download(path);
+        } else {
+            res.sendStatus(404);
+        }
+    } catch(err) {
+        res.sendStatus(404);
+    }
+});
 
-    const name = `${contractNumber.replace("/", "-")}`;
-    const x = XlsxPopulate.fromFileAsync("./template.xlsx")
-        .then(workbook => {
-            // dates/locations
-            workbook.sheet(0).cell("C2").value(contractNumber);
-            workbook.sheet(0).cell("C3").value(from);
-            workbook.sheet(0).cell("C4").value(to);
-            workbook.sheet(0).cell("C5").value(delivery);
-            workbook.sheet(0).cell("C6").value(admission);
-
-            return workbook.toFileAsync(`./xlsx/${name}.xlsx`);
-        });
-
-    x.then(_ => {
-        convertToPdf(name).then(_ => res.sendStatus(200))
-    })
-})
-
-app.post('/api/create', async function (req, res) {
+app.post('/api/create', async (req, res) => {
     const payload = {
         "from": moment(req.body.from, 'YYYY-MM-DD').format('DD.MM.YYYY') || null,
         "to": moment(req.body.to, 'YYYY-MM-DD').format('DD.MM.YYYY') || null,
@@ -153,7 +159,8 @@ app.post('/api/create', async function (req, res) {
         "email": req.body.email || null,
         "car": carMap[req.body.car] || req.body.car || null,
         "carId": req.body.car || null,
-        "status": "created"
+        "status": "created",
+        "createdAt": moment().format('DD.MM.YYYY')
     };
 
     if (
@@ -184,14 +191,14 @@ app.post('/api/create', async function (req, res) {
     res.status(200).send(payload);
 })
 
-app.post('/api/createDoc', async function (req, res) {
-    console.log(req.body)
+app.post('/api/createDoc', async (req, res) => {
     const payload = {
         ...req.body,
         "carModel": carMap[req.body.carId] || req.body.carId || null,
         "carMaxSpeed": 130 || null,
         "otherDeposit": 300 || null,
         "otherFuelLevel": '100%' || null,
+        "isSigned": false,
     };
 
     if (
@@ -209,14 +216,13 @@ app.post('/api/createDoc', async function (req, res) {
     const snapshot = await byCollectionRef.get();
     snapshot.forEach(doc => {
         documents.push({
-            id: doc.id,
             ...doc.data()
         });
     });
 
     const max = documents.reduce((acc, val) => {
-        return acc.id > val.id ? acc : val;
-    }, []);
+        return Number(acc.id) > Number(val.id) ? acc : val;
+    }, {});
 
     const idNumber = Number(max.id) || documents.length.toString();
     const id = Number(idNumber) + 1;
@@ -232,18 +238,70 @@ app.post('/api/createDoc', async function (req, res) {
     });
 })
 
-app.post('/api/saveDoc', async function (req, res) {
-    // const locations = getPayloadLocations(req.body);
+app.post('/api/saveDoc', async (req, res) => {
+    console.log(req.body)
+    const {
+        delivery,
+        admission,
+    } = getPayloadLocations(req.body);
     const payload = {
         ...req.body,
+        wasSaved: true,
     };
 
     const byCollectionRef = db.collection(DOCUMENTS_KEY);
     await byCollectionRef.doc(`RDV-${req.body.id}`).set(payload);
-    res.status(200).send(payload);
+
+    const name = `RDV-${req.body.id}`;
+    const x = XlsxPopulate.fromFileAsync("./template.xlsx")
+        .then(workbook => {
+            // dates/locations
+            workbook.sheet(0).cell("C2").value(`RDV/${req.body.id}`);
+            workbook.sheet(0).cell("C3").value(req.body.from);
+            workbook.sheet(0).cell("C4").value(req.body.to);
+            workbook.sheet(0).cell("C5").value(delivery);
+            workbook.sheet(0).cell("C6").value(admission);
+            // driver info
+            workbook.sheet(0).cell("H3").value(req.body.username);
+            workbook.sheet(0).cell("H4").value(req.body.birth);
+            workbook.sheet(0).cell("H5").value(req.body.tel);
+            workbook.sheet(0).cell("H6").value(req.body.email);
+            workbook.sheet(0).cell("H7").value(req.body.passNumber);
+            workbook.sheet(0).cell("H8").value(req.body.passExp);
+            workbook.sheet(0).cell("H9").value(req.body.passCountry);
+            workbook.sheet(0).cell("H10").value(req.body.licenseCountry);
+            workbook.sheet(0).cell("H11").value(req.body.licenseNumber);
+            workbook.sheet(0).cell("H12").value(req.body.licenseExp);
+            workbook.sheet(0).cell("H13").value(req.body.bankCard);
+            workbook.sheet(0).cell("H14").value(req.body.bankCardExp);
+            // car info
+            workbook.sheet(0).cell("H19").value(req.body.carModel);
+            workbook.sheet(0).cell("H21").value(req.body.carPlates);
+            workbook.sheet(0).cell("H22").value(req.body.carChassisNumber);
+            workbook.sheet(0).cell("H23").value(req.body.carRegPassNumber);
+            workbook.sheet(0).cell("H24").value(req.body.carYear);
+            workbook.sheet(0).cell("H25").value(req.body.carColor);
+            workbook.sheet(0).cell("H26").value(req.body.carFuelType);
+            workbook.sheet(0).cell("H27").value(req.body.carValueEur);
+            workbook.sheet(0).cell("H28").value(req.body.carMaxSpeed);
+            // other info
+            workbook.sheet(0).cell("M5").value(req.body.otherDriverAddress);
+            workbook.sheet(0).cell("M6").value(req.body.otherAdditionalDriverData);
+            workbook.sheet(0).cell("M7").value(req.body.otherDeposit);
+            workbook.sheet(0).cell("M8").value(req.body.otherFuelLevel);
+            workbook.sheet(0).cell("M9").value(req.body.lang);
+
+            return workbook.toFileAsync(`./xlsx/${name}.xlsx`);
+        });
+
+    x.then(() => {
+        convertContract(name).then(() => {
+            convertInvoice(name).then(() => res.send(payload))
+        });
+    })
 })
 
-app.get('/api/getDoc', async function (req, res) {
+app.get('/api/getDoc', async (req, res) => {
     const { id } = req.query;
 
     let documents = [];
@@ -265,6 +323,6 @@ app.get('/api/getDoc', async function (req, res) {
     res.status(200).send(document);
 })
 
-app.listen(process.env.PORT || 80, async() => {
+app.listen(process.env.PORT || 80, async () => {
     console.log('Started on port', process.env.PORT || 80)
 })
