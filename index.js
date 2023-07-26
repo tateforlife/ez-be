@@ -94,10 +94,10 @@ const carMap = {
 
 const convertContract = async (id) => {
     const x = convertapi.convert('pdf', {
-        File: `./var/data/xlsx/${id}.xlsx`,
+        File: `/var/data/xlsx/${id}.xlsx`,
         WorksheetIndex: 2
     }, 'xls').then(function(result) {
-        const y = result.saveFiles('./var/data/pdf/');
+        const y = result.saveFiles('/var/data/pdf/');
 
         return y;
     });
@@ -107,10 +107,10 @@ const convertContract = async (id) => {
 
 const convertInvoice = async (id) => {
     const x = convertapi.convert('pdf', {
-        File: `./var/data/xlsx/${id}.xlsx`,
+        File: `/var/data/xlsx/${id}.xlsx`,
         WorksheetIndex: 3
     }, 'xls').then(function(result) {
-        const y = result.saveFiles('./var/data/invoice/');
+        const y = result.saveFiles('/var/data/invoice/');
 
         return y;
     });
@@ -120,7 +120,7 @@ const convertInvoice = async (id) => {
 
 app.post("/api/downloadContract", async (req, res) => {
     const name = `RDV-${req.body.id}`;
-    const path = `./var/data//pdf/${name}.pdf`;
+    const path = `/var/data//pdf/${name}.pdf`;
     try {
         if (fs.existsSync(path)) {
             res.download(path);
@@ -134,7 +134,7 @@ app.post("/api/downloadContract", async (req, res) => {
 
 app.post("/api/downloadInvoice", async (req, res) => {
     const name = `RDV-${req.body.id}`;
-    const path = `./var/data/invoice/${name}.pdf`;
+    const path = `/var/data/invoice/${name}.pdf`;
     try {
         if (fs.existsSync(path)) {
             res.download(path);
@@ -291,7 +291,7 @@ app.post('/api/saveDoc', async (req, res) => {
             workbook.sheet(0).cell("M8").value(req.body.otherFuelLevel);
             workbook.sheet(0).cell("M9").value(req.body.lang);
 
-            return workbook.toFileAsync(`./var/data/xlsx/${name}.xlsx`);
+            return workbook.toFileAsync(`/var/data/xlsx/${name}.xlsx`);
         });
 
     x.then(() => {
