@@ -20,6 +20,7 @@
     "firebase": "^10.0.0",
     "firebase-admin": "^11.9.0",
     "moment": "^2.29.4",
+    "pdf-lib": "^1.17.1",
     "xlsx-populate": "^1.21.0"
   }
 }

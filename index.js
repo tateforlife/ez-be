@@ -1,10 +1,12 @@
 const express = require("express");
 const app = express();
 const admin = require('firebase-admin');
+const { getStorage } = require('firebase-admin/storage');
 const moment = require('moment');
 const cors = require('cors')
 const XlsxPopulate = require('xlsx-populate');
 const fs = require('fs');
+const pdf = require('pdf-lib');
 // TODO add secret env key
 const convertapi = require('convertapi')('BpMFm93JuS1vLLrV');
 require('dotenv').config()
@@ -30,7 +32,8 @@ admin.initializeApp({
         "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
         "client_x509_cert_url": process.env.X509_CERT_URL,
         "universe_domain": "googleapis.com"
-    })
+    }),
+    storageBucket: "ezcars-c112b.appspot.com"
 });
 const db = admin.firestore();
 
@@ -120,10 +123,37 @@ const convertInvoice = async (id) => {
 
 app.post("/api/downloadContract", async (req, res) => {
     const name = `RDV-${req.body.id}`;
-    const path = `/var/data//pdf/${name}.pdf`;
+    const path = `/var/data/pdf/${name}.pdf`;
     try {
         if (fs.existsSync(path)) {
-            res.download(path);
+            let fileRef;
+            try {
+                fileRef = await getStorage().bucket().file(`sign/RDV-${req.body.id}.png`).download();
+            } catch(e) {
+                console.log(e)
+            }
+
+            if (fileRef) {
+                const existingPdfBytes = fs.readFileSync(`/var/data/pdf/${name}.pdf`);
+                const pdfDoc = await pdf.PDFDocument.load(existingPdfBytes)
+                const page = pdfDoc.getPages()[3]
+                const pngImage = await pdfDoc.embedPng(fileRef[0])
+                page.drawImage(pngImage, {
+                    x: page.getWidth() / 4,
+                    y: 122,
+                    width: 40,
+                    height: 40
+                })
+                const pdfBytes = await pdfDoc.save()                
+
+                var fileContents = Buffer.from(pdfBytes, "base64");
+                var savedFilePath = `/var/data/pdf/RDV-${req.body.id}.pdf`; // in some convenient temporary file folder
+                fs.writeFile(savedFilePath, fileContents, function() {
+                    res.status(200).download(savedFilePath, `RDV-${req.body.id}`);
+                });
+            } else {
+                res.download(path);
+            }
         } else {
             res.sendStatus(404);
         }
