@@ -147,7 +147,7 @@ app.post("/api/downloadContract", async (req, res) => {
                 const pdfBytes = await pdfDoc.save()                
 
                 var fileContents = Buffer.from(pdfBytes, "base64");
-                var savedFilePath = `/var/data/pdf/RDV-${req.body.id}.pdf`; // in some convenient temporary file folder
+                var savedFilePath = `/var/data/temp/RDV-${req.body.id}.pdf`; // in some convenient temporary file folder
                 fs.writeFile(savedFilePath, fileContents, function() {
                     res.status(200).download(savedFilePath, `RDV-${req.body.id}`);
                 });
