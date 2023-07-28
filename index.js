@@ -149,7 +149,7 @@ app.post("/api/downloadContract", async (req, res) => {
                 var fileContents = Buffer.from(pdfBytes, "base64");
                 var savedFilePath = `/var/data/temp/RDV-${req.body.id}.pdf`; // in some convenient temporary file folder
                 fs.writeFile(savedFilePath, fileContents, function() {
-                    res.status(200).download(savedFilePath, `RDV-${req.body.id}`);
+                    res.status(200).download(savedFilePath);
                 });
             } else {
                 res.download(path);
@@ -178,8 +178,8 @@ app.post("/api/downloadInvoice", async (req, res) => {
 
 app.post('/api/create', async (req, res) => {
     const payload = {
-        "from": moment(req.body.from, 'YYYY-MM-DD').format('DD.MM.YYYY') || null,
-        "to": moment(req.body.to, 'YYYY-MM-DD').format('DD.MM.YYYY') || null,
+        "from": req.body.from || null,
+        "to": req.body.to || null,
         "username": req.body.username || null,
         "tel": req.body.tel || null,
         "admission": req.body.admission || null,
@@ -286,7 +286,7 @@ app.post('/api/saveDoc', async (req, res) => {
     const x = XlsxPopulate.fromFileAsync("./template.xlsx")
         .then(workbook => {
             // dates/locations
-            workbook.sheet(0).cell("C2").value(`RDV/${req.body.id}`);
+            workbook.sheet(0).cell("C2").value(req.body.contractNumber);
             workbook.sheet(0).cell("C3").value(req.body.from);
             workbook.sheet(0).cell("C4").value(req.body.to);
             workbook.sheet(0).cell("C5").value(delivery);
