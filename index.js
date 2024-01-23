@@ -7,8 +7,10 @@ const cors = require('cors')
 const XlsxPopulate = require('xlsx-populate');
 const fs = require('fs');
 const pdf = require('pdf-lib');
+const { sendContractToClient } = require("./mailer");
+
 // TODO add secret env key
-const convertapi = require('convertapi')('BpMFm93JuS1vLLrV');
+const convertapi = require('convertapi')('IgOPmQhCnxxVVwcU');
 require('dotenv').config()
 
 const LOCATIONS_MAP = {
@@ -99,11 +101,45 @@ const convertContract = async (id) => {
     const x = convertapi.convert('pdf', {
         File: `/var/data/xlsx/${id}.xlsx`,
         WorksheetIndex: 2
-    }, 'xls').then(function(result) {
+    }, 'xls').then(async function(result) {
         const y = result.saveFiles('/var/data/pdf/');
-
         return y;
     });
+
+    x.then(async () => {
+        console.log(id)
+
+        try {
+            let fileRef;
+            try {
+                fileRef = await getStorage().bucket().file(`sign/${id}.png`).download();
+            } catch(e) {
+                console.log(e)
+            }
+
+            if (fileRef) {
+                const existingPdfBytes = fs.readFileSync(`/var/data/pdf/${id}.pdf`);
+                const pdfDoc = await pdf.PDFDocument.load(existingPdfBytes)
+                const page = pdfDoc.getPages()[3]
+                const pngImage = await pdfDoc.embedPng(fileRef[0])
+                page.drawImage(pngImage, {
+                    x: page.getWidth() / 4,
+                    y: 122,
+                    width: 40,
+                    height: 40
+                })
+                const pdfBytes = await pdfDoc.save()   
+                
+                console.log(fileRef)
+
+                var fileContents = Buffer.from(pdfBytes, "base64");
+                var savedFilePath = `/var/data/pdf/${id}.pdf`; // in some convenient temporary file folder
+                fs.writeFile(savedFilePath, fileContents, () => {});
+            }
+        } catch(err) {
+            console.log(err)
+        }
+    })
 
     return x;
 };
@@ -124,36 +160,10 @@ const convertInvoice = async (id) => {
 app.post("/api/downloadContract", async (req, res) => {
     const name = `RDV-${req.body.id}`;
     const path = `/var/data/pdf/${name}.pdf`;
+    
     try {
         if (fs.existsSync(path)) {
-            let fileRef;
-            try {
-                fileRef = await getStorage().bucket().file(`sign/RDV-${req.body.id}.png`).download();
-            } catch(e) {
-                console.log(e)
-            }
-
-            if (fileRef) {
-                const existingPdfBytes = fs.readFileSync(`/var/data/pdf/${name}.pdf`);
-                const pdfDoc = await pdf.PDFDocument.load(existingPdfBytes)
-                const page = pdfDoc.getPages()[3]
-                const pngImage = await pdfDoc.embedPng(fileRef[0])
-                page.drawImage(pngImage, {
-                    x: page.getWidth() / 4,
-                    y: 122,
-                    width: 40,
-                    height: 40
-                })
-                const pdfBytes = await pdfDoc.save()                
-
-                var fileContents = Buffer.from(pdfBytes, "base64");
-                var savedFilePath = `/var/data/temp/RDV-${req.body.id}.pdf`; // in some convenient temporary file folder
-                fs.writeFile(savedFilePath, fileContents, function() {
-                    res.status(200).download(savedFilePath);
-                });
-            } else {
-                res.download(path);
-            }
+            res.download(path);
         } else {
             res.sendStatus(404);
         }
@@ -274,10 +284,13 @@ app.post('/api/saveDoc', async (req, res) => {
         delivery,
         admission,
     } = getPayloadLocations(req.body);
+    const { isSignRequest, ...rest } = req.body;
     const payload = {
-        ...req.body,
+        ...rest,
         wasSaved: true,
     };
+
+    console.log(!!isSignRequest)
 
     const byCollectionRef = db.collection(DOCUMENTS_KEY);
     await byCollectionRef.doc(`RDV-${req.body.id}`).set(payload);
@@ -320,13 +333,29 @@ app.post('/api/saveDoc', async (req, res) => {
             workbook.sheet(0).cell("M7").value(req.body.otherDeposit);
             workbook.sheet(0).cell("M8").value(req.body.otherFuelLevel);
             workbook.sheet(0).cell("M9").value(req.body.lang);
+            // calculations
+            workbook.sheet(0).cell("C8").value(req.body.calcDaysCount);
+            workbook.sheet(0).cell("C9").value(req.body.calcDayPrice);
+            workbook.sheet(0).cell("C10").value(!!req.body.calcInsuranceDayPrice ? 1 : 0);
+            workbook.sheet(0).cell("C11").value(req.body.calcBcfPrice ? Number(req.body.calcBcfPrice) : 0);
+            workbook.sheet(0).cell("C12").value(req.body.calcUnlimPrice ? Number(req.body.calcUnlimPrice) : 0);
+            workbook.sheet(0).cell("C13").value(req.body.calcOOWPrice ? Number(req.body.calcOOWPrice) : 0);
+            workbook.sheet(0).cell("C14").value(req.body.calcOptionalEquipPrice ? Number(req.body.calcOptionalEquipPrice) : 0);
+            workbook.sheet(0).cell("C15").value(req.body.calcDeliveryPrice ? Number(req.body.calcDeliveryPrice) : 0);
+            workbook.sheet(0).cell("B21").value(req.body.calcInsuranceDayPrice);
 
             return workbook.toFileAsync(`/var/data/xlsx/${name}.xlsx`);
         });
 
     x.then(() => {
         convertContract(name).then(() => {
-            convertInvoice(name).then(() => res.send(payload))
+            convertInvoice(name).then(() => {
+                if (isSignRequest) {
+                    sendContractToClient(req.body.email, name)
+                }
+
+                res.send(payload);
+            })
         });
     })
 })
